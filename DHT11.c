@@ -1,10 +1,5 @@
-#define F_CPU 16000000L //Definição necessária antes do include de <util/delay.h> pela condição de guarda
+#define F_CPU 16000000L 
 #define BAUD 9600
-
-#define DHT_PIN     PB0
-#define DHT_PORT    PORTB
-#define DHT_DDR     DDRB
-#define DHT_IN      PINB
 
 #include <avr/io.h>
 #include <util/delay.h>
@@ -12,12 +7,17 @@
 #include <util/setbaud.h>
 #include <avr/interrupt.h>
 
+#define DHT_PIN     PB0
+#define DHT_PORT    PORTB
+#define DHT_DDR     DDRB
+#define DHT_IN      PINB
+
 #define tstmask(reg, bit) (reg&(1<<bit))
 #define setmask(reg, bit) (reg|=(1<<bit))
 #define clrmask(reg, bit) (reg&=~(1<< bit))
 #define cplmask(reg, bit) (reg^=(1<<bit))
 
-// Support Functions --------------------------------------------------
+// Support Functions -------------------------------------------------
 
 void printInt(int n) {
   char num[9];
@@ -49,7 +49,7 @@ void reset(int dataArray[]) {
         dataArray[i] = 0;
 }
 
-/* Delay for the given number of microseconds.  Assumes a 8 or 16 MHz clock. */
+// Delay for the given number of microseconds. For 8 or 16 MHz
 void _delay(unsigned int us) {
         // calling avrlib's delay_us() function with low values (e.g. 1 or
         // 2 microseconds) gives delays longer than desired.
@@ -66,7 +66,7 @@ void _delay(unsigned int us) {
         // delay requested.
         us <<= 2;
 
-        // account for the time taken in the preceeding commands.
+        // Account for the time taken in the preceeding commands.
         us -= 2;
 
         // busy wait
@@ -78,6 +78,7 @@ void _delay(unsigned int us) {
 
 // UART --------------------------------------------------------------
 
+// Serial initial configuration
 void uart_init(void) {
     UBRR0H = UBRRH_VALUE;
     UBRR0L = UBRRL_VALUE;
@@ -88,20 +89,23 @@ void uart_init(void) {
     UCSR0A &= ~(_BV(U2X0));
 #endif
 
-    UCSR0C = _BV(UCSZ01) | _BV(UCSZ00);     // 8-bit data 
-    UCSR0B = _BV(RXEN0) | _BV(TXEN0);       // Enable RX and TX 
+    UCSR0C = _BV(UCSZ01) | _BV(UCSZ00);         // 8-bit data 
+    UCSR0B = _BV(RXEN0) | _BV(TXEN0);           // Enable RX and TX 
 }
 
+// Send a char via Serial
 void uart_putchar(char c) {
-    loop_until_bit_is_set(UCSR0A, UDRE0);   // Wait until data register empty. 
+    loop_until_bit_is_set(UCSR0A, UDRE0);       // Wait until data register empty. 
     UDR0 = c;
 }
 
+// Receive a char via Serial
 char uart_getchar(void) {
-    loop_until_bit_is_set(UCSR0A, RXC0);    // Wait until data exists. 
+    loop_until_bit_is_set(UCSR0A, RXC0);        // Wait until data exists. 
     return UDR0;
 }
 
+// Send a string via Serial
 void uart_putstr(char str[]) {
     int i;
     for (i = 0; i < strlen(str); i++){ 
@@ -112,22 +116,24 @@ void uart_putstr(char str[]) {
 // DHT ---------------------------------------------------------------
 
 void dht_init(void) {
-    TCCR0A = 0;
-    TCCR0B = (1 << CS11);
+    TCCR0A = 0;                                 // Normal Mode
+    TCCR0B = (1 << CS11);                       // Prescaler clk/8
     
-    _delay_ms(2000);            // Time for the sensor to get ready
+    _delay_ms(2000);                            // Wait sensor setup
 }
 
 int fetchData(int dataArray[4]) {
     int i, j, data[5][8];
 
-    // MCU OUTPUT PART -----------------------------------------------
+    // INITIALIZATION ------------------------------------------------
 
     clrmask(DHT_DDR, DHT_PIN);                  // Set DHT_PIN as input
     clrmask(DHT_PORT, DHT_PIN);                 // Pull-up raise - begin
     
     _delay_ms(250);                             // Wait for 250 ms
     
+    // MCU OUTPUT PART -----------------------------------------------
+   
     setmask(DHT_DDR, DHT_PIN);                  // Set DHT_PIN as output
     clrmask(DHT_PORT, DHT_PIN);                 // Set DHT_PIN LOW
     
@@ -149,30 +155,31 @@ int fetchData(int dataArray[4]) {
     
     // DHT11 PREAMBLE ------------------------------------------------
 
-    // Wait for 80 us - LOW
-    while (!tstmask(DHT_IN, DHT_PIN));
+    while (!tstmask(DHT_IN, DHT_PIN));          // Wait for 80 us - LOW
 
-    // Wait for 80 us - HIGH
-    while (tstmask(DHT_IN, DHT_PIN));
+    while (tstmask(DHT_IN, DHT_PIN));           // Wait for 80 us - HIGH
 
     // DHT11 DATA RECEIVE --------------------------------------------
     
     for (i=0; i<5; i++) {
         for (j=7; j>=0; j--) {     
+            
             // Data define period - Usually 50 us LOW
             while (!tstmask(DHT_IN, DHT_PIN));
         
-            TCNT0 = 0;          // Timer 0 counter reset
-            // Receive bit - 26-28 us(bit 0) or 70 us(bit 1) HIGH
-            while (tstmask(DHT_IN, DHT_PIN));
+            TCNT0 = 0;                          // Timer 0 counter reset
+            
+            while (tstmask(DHT_IN, DHT_PIN));   // Receive bit            
         
-            data[i][j] = TCNT0;       // Get counter value
+            data[i][j] = TCNT0;                 // Get counter value
         }
     }
 
     // End of Time Critical Code
-    sei();
-    
+    sei();                                      // Activate interrupts
+   
+    // Bit Check
+    // 26-28 us(bit 0) or 70 us(bit 1)
     for (i=0; i<5; i++) {
         for (j=7; j>=0; j--) {
             if (data[i][j] < 14)       clrmask(dataArray[i], j);
@@ -182,6 +189,7 @@ int fetchData(int dataArray[4]) {
 
     // DATA Checking -------------------------------------------------
     
+    // Checksum verification
     if (dataArray[4] == 
        ((dataArray[0] + 
          dataArray[1] + 
