@@ -203,7 +203,6 @@ int main(void) {
         if (fetchData(dt)) {
             printf("Humidity = %d.%d%%    ", dt[0], dt[1]);
             printf("Temperature = %d.%d*C\n", dt[2], dt[3]); 
-            
         } else printf("ERRO\n");
         _delay_ms(500);
     }
