@@ -1,7 +1,13 @@
+//------------------------------------------------------------------------------
+//      Andrey Souto Maior                      RA - 78788
+//      Caio Henrique Segawa Tonetti            RA - 79064
+//------------------------------------------------------------------------------
+
 #define F_CPU 16000000L 
 #define BAUD 9600
 
 #include <avr/io.h>
+#include <stdio.h>
 #include <util/delay.h>
 #include <string.h>
 #include <util/setbaud.h>
@@ -17,33 +23,11 @@
 #define clrmask(reg, bit) (reg&=~(1<< bit))
 #define cplmask(reg, bit) (reg^=(1<<bit))
 
+static FILE uart_stream = {0};                  // Create Stream
+
 // Support Functions -------------------------------------------------
 
-void printInt(int n) {
-  char num[9];
-  
-  itoa(n, num, 10);
-  
-  uart_putstr(num);
-}
-
-void printTemperature(int d, int n) {
-    uart_putstr("T = ");
-    printInt(d);
-    uart_putchar('.');
-    printInt(n);
-    uart_putstr("*C");
-}
-
-void printHumidity(int d, int n) {
-    uart_putstr("H = ");
-    printInt(d);
-    uart_putchar('.');
-    printInt(n);
-    uart_putchar('%');
-}
-
-void reset(int dataArray[]) {
+void resetDT(int dataArray[]) {
     int i;
     for (i=0; i<4; i++)
         dataArray[i] = 0;
@@ -91,6 +75,11 @@ void uart_init(void) {
 
     UCSR0C = _BV(UCSZ01) | _BV(UCSZ00);         // 8-bit data 
     UCSR0B = _BV(RXEN0) | _BV(TXEN0);           // Enable RX and TX 
+
+    fdev_setup_stream(&uart_stream, uart_putc, 
+            NULL, _FDEV_SETUP_WRITE);           // Initialize Stream
+
+    stdout = &uart_stream;                      // Setting stream
 }
 
 // Send a char via Serial
@@ -105,12 +94,13 @@ char uart_getchar(void) {
     return UDR0;
 }
 
-// Send a string via Serial
-void uart_putstr(char str[]) {
-    int i;
-    for (i = 0; i < strlen(str); i++){ 
-        uart_putchar(str[i]);
-    }
+// Printf Configure Function
+static int uart_putc(char c, FILE *stream) {
+    if (c == '\n') uart_putc('\r', stream);
+
+    uart_putchar(c);
+
+    return 0;
 }
 
 // DHT ---------------------------------------------------------------
@@ -209,19 +199,12 @@ int main(void) {
     uart_init();
 
     while (1) {
-        reset(dt);
+        resetDT(dt);
         if (fetchData(dt)) {
-            // Humidity
-            printHumidity(dt[0], dt[1]);
-
-            uart_putstr("    ");
-
-            // Temperature
-            printTemperature(dt[2], dt[3]);
+            printf("Humidity = %d.%d%%    ", dt[0], dt[1]);
+            printf("Temperature = %d.%d*C\n", dt[2], dt[3]); 
             
-            uart_putchar('\n');
-            
-        } else uart_putstr("ERRO\n");
+        } else printf("ERRO\n");
         _delay_ms(500);
     }
 }
